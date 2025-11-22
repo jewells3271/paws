@@ -11,9 +11,23 @@ function login() {
     
     if (pin === ADMIN_PIN) {
         isLoggedIn = true;
-        document.getElementById('login-screen').classList.add('hidden');
-        document.getElementById('admin-interface').classList.remove('hidden');
-        loadDashboard();
+        const loginScreen = document.getElementById('login-screen');
+        const adminInterface = document.getElementById('admin-interface');
+        
+        // Hide login screen
+        loginScreen.style.display = 'none';
+        loginScreen.classList.add('hidden');
+        
+        // Show admin interface
+        adminInterface.classList.remove('hidden');
+        adminInterface.style.display = 'flex';
+        
+        // Load dashboard
+        try {
+            loadDashboard();
+        } catch (error) {
+            console.error('Error loading dashboard:', error);
+        }
     } else {
         const errorEl = document.getElementById('login-error');
         errorEl.textContent = 'Invalid PIN. Please try again.';
@@ -35,9 +49,14 @@ function logout() {
 }
 
 // Allow Enter key on PIN input
-document.getElementById('admin-pin').addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        login();
+window.addEventListener('DOMContentLoaded', () => {
+    const pinInput = document.getElementById('admin-pin');
+    if (pinInput) {
+        pinInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                login();
+            }
+        });
     }
 });
 

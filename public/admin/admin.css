@@ -38,6 +38,10 @@
     min-height: 100vh;
 }
 
+#admin-interface.hidden {
+    display: none !important;
+}
+
 /* Sidebar */
 .sidebar {
     width: 260px;

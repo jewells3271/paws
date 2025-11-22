@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Paws Grooming</title>
+    <link rel="stylesheet" href="../css/theme.css">
+    <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-screen">
+        <div class="login-container">
+            <h1>🐾 Paws Grooming</h1>
+            <h2>Admin Panel</h2>
+            <div class="card">
+                <div class="form-group">
+                    <label>Enter Admin PIN</label>
+                    <input 
+                        type="password" 
+                        id="admin-pin" 
+                        placeholder="Enter 4-digit PIN" 
+                        maxlength="4"
+                        pattern="[0-9]*"
+                        inputmode="numeric"
+                        autocomplete="off"
+                    >
+                </div>
+                <button class="btn btn-primary btn-block" onclick="login()">Login</button>
+                <div id="login-error" class="alert alert-error hidden mt-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Admin Interface -->
+    <div id="admin-interface" class="hidden">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>🐾 Paws Admin</h2>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-section="dashboard" onclick="showSection('dashboard')">
+                    <span class="nav-icon">📊</span>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#" class="nav-item" data-section="appointments" onclick="showSection('appointments')">
+                    <span class="nav-icon">📅</span>
+                    <span>Appointments</span>
+                </a>
+                <a href="#" class="nav-item" data-section="clients" onclick="showSection('clients')">
+                    <span class="nav-icon">👥</span>
+                    <span>Clients & Pets</span>
+                </a>
+                <a href="#" class="nav-item" data-section="services" onclick="showSection('services')">
+                    <span class="nav-icon">✂️</span>
+                    <span>Services</span>
+                </a>
+                <a href="#" class="nav-item" data-section="groomers" onclick="showSection('groomers')">
+                    <span class="nav-icon">👨‍💼</span>
+                    <span>Groomers</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button class="btn btn-secondary btn-block" onclick="logout()">Logout</button>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Dashboard Section -->
+            <section id="section-dashboard" class="content-section active">
+                <h1>Dashboard</h1>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-today-appointments">-</div>
+                        <div class="stat-label">Today's Appointments</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-total-clients">-</div>
+                        <div class="stat-label">Total Clients</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-total-pets">-</div>
+                        <div class="stat-label">Total Pets</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-active-groomers">-</div>
+                        <div class="stat-label">Active Groomers</div>
+                    </div>
+                </div>
+                
+                <div class="card mt-4">
+                    <div class="card-header">
+                        <h2>Upcoming Appointments</h2>
+                    </div>
+                    <div id="dashboard-appointments">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Appointments Section -->
+            <section id="section-appointments" class="content-section">
+                <div class="section-header">
+                    <h1>Appointments</h1>
+                    <button class="btn btn-primary" onclick="showNewAppointmentModal()">+ New Appointment</button>
+                </div>
+                
+                <div class="card">
+                    <div class="filters mb-3">
+                        <select id="appointment-filter" onchange="loadAppointments()">
+                            <option value="all">All Appointments</option>
+                            <option value="scheduled">Scheduled</option>
+                            <option value="completed">Completed</option>
+                            <option value="cancelled">Cancelled</option>
+                        </select>
+                    </div>
+                    <div id="appointments-list">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Clients & Pets Section -->
+            <section id="section-clients" class="content-section">
+                <div class="section-header">
+                    <h1>Clients & Pets</h1>
+                    <button class="btn btn-primary" onclick="showNewClientModal()">+ New Client/Pet</button>
+                </div>
+                
+                <div class="card">
+                    <div class="form-group">
+                        <input 
+                            type="text" 
+                            id="client-search" 
+                            placeholder="Search by client name, pet name, or PIN..." 
+                            oninput="searchClients()"
+                        >
+                    </div>
+                    <div id="clients-list">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Services Section -->
+            <section id="section-services" class="content-section">
+                <div class="section-header">
+                    <h1>Services</h1>
+                    <button class="btn btn-primary" onclick="showNewServiceModal()">+ New Service</button>
+                </div>
+                
+                <div class="card">
+                    <div id="services-list">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Groomers Section -->
+            <section id="section-groomers" class="content-section">
+                <div class="section-header">
+                    <h1>Groomers</h1>
+                    <button class="btn btn-primary" onclick="showNewGroomerModal()">+ New Groomer</button>
+                </div>
+                
+                <div id="groomers-list">
+                    <div class="spinner"></div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal Container -->
+    <div id="modal-overlay" class="modal-overlay hidden" onclick="closeModal()"></div>
+    <div id="modal-container" class="modal-container hidden"></div>
+
+    <script src="admin.js"></script>
+</body>
+</html>

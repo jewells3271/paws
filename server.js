@@ -60,10 +60,7 @@ app.get('/api/clients', (req, res) => {
 
 // Endpoint to search clients and pets
 app.get('/api/search', (req, res) => {
-    const query = req.query.q;
-    if (!query) {
-        return res.status(400).json({ error: 'Search query parameter "q" is required.' });
-    }
+    const query = req.query.q || '';
 
     const searchTerm = `%${query}%`;
     const sql = `
@@ -233,7 +230,7 @@ app.get('/api/availability', async (req, res) => {
 
 // Endpoint to book an appointment
 app.post('/api/appointments', async (req, res) => {
-    const { petId, serviceId, appointmentStartTime } = req.body;
+    const { petId, serviceId, appointmentStartTime, groomerId } = req.body;
 
     if (!petId || !serviceId || !appointmentStartTime) {
         return res.status(400).json({ error: 'petId, serviceId, and appointmentStartTime are required.' });
@@ -256,8 +253,8 @@ app.post('/api/appointments', async (req, res) => {
         const appointmentEndTime = endTime.toISOString();
 
         // 3. Insert the appointment
-        const insertSql = `INSERT INTO appointments (pet_id, service_id, appointment_start_time, appointment_end_time, status) VALUES (?, ?, ?, ?, 'scheduled')`;
-        db.run(insertSql, [petId, serviceId, appointmentStartTime, appointmentEndTime], function(err) {
+        const insertSql = `INSERT INTO appointments (pet_id, service_id, appointment_start_time, appointment_end_time, status, groomer_id) VALUES (?, ?, ?, ?, 'scheduled', ?)`;
+        db.run(insertSql, [petId, serviceId, appointmentStartTime, appointmentEndTime, groomerId || null], function(err) {
             if (err) {
                 console.error('Error creating appointment:', err.message);
                 return res.status(500).json({ error: 'Failed to book appointment.' });
@@ -448,10 +445,132 @@ app.post('/api/client-pet', async (req, res) => {
     });
 });
 
+// Endpoint to get all groomer schedules
+app.get('/api/groomer-schedules', (req, res) => {
+    const sql = `
+        SELECT gs.*, g.name as groomer_name 
+        FROM groomer_schedules gs
+        JOIN groomers g ON gs.groomer_id = g.id
+        ORDER BY gs.groomer_id, gs.day_of_week
+    `;
+    db.all(sql, [], (err, rows) => {
+        if (err) {
+            console.error('Error querying groomer schedules:', err.message);
+            res.status(500).json({ error: 'Database error while fetching schedules.' });
+            return;
+        }
+        res.json(rows);
+    });
+});
 
+// Endpoint to delete a groomer
+app.delete('/api/groomers/:id', (req, res) => {
+    const { id } = req.params;
+    const sql = `DELETE FROM groomers WHERE id = ?`;
+    db.run(sql, [id], function(err) {
+        if (err) {
+            console.error('Error deleting groomer:', err.message);
+            return res.status(500).json({ error: 'Failed to delete groomer.' });
+        }
+        res.json({ message: 'Groomer deleted successfully!' });
+    });
+});
+
+// Endpoint to create a new service
+app.post('/api/services', (req, res) => {
+    const { name, description, price, duration_minutes, animal_type } = req.body;
+    if (!name || !price || !duration_minutes || !animal_type) {
+        return res.status(400).json({ error: 'Name, price, duration, and animal type are required.' });
+    }
+    const sql = `INSERT INTO services (name, description, price, duration_minutes, animal_type) VALUES (?, ?, ?, ?, ?)`;
+    db.run(sql, [name, description, price, duration_minutes, animal_type], function(err) {
+        if (err) {
+            console.error('Error creating service:', err.message);
+            return res.status(500).json({ error: 'Failed to create service.' });
+        }
+        res.status(201).json({ message: 'Service created successfully!', id: this.lastID });
+    });
+});
+
+// Endpoint to update a service
+app.put('/api/services/:id', (req, res) => {
+    const { id } = req.params;
+    const { name, description, price, duration_minutes, animal_type } = req.body;
+    if (!name || !price || !duration_minutes || !animal_type) {
+        return res.status(400).json({ error: 'Name, price, duration, and animal type are required.' });
+    }
+    const sql = `UPDATE services SET name = ?, description = ?, price = ?, duration_minutes = ?, animal_type = ? WHERE id = ?`;
+    db.run(sql, [name, description, price, duration_minutes, animal_type, id], function(err) {
+        if (err) {
+            console.error('Error updating service:', err.message);
+            return res.status(500).json({ error: 'Failed to update service.' });
+        }
+        res.json({ message: 'Service updated successfully!' });
+    });
+});
+
+// Endpoint to delete a service
+app.delete('/api/services/:id', (req, res) => {
+    const { id } = req.params;
+    const sql = `DELETE FROM services WHERE id = ?`;
+    db.run(sql, [id], function(err) {
+        if (err) {
+            console.error('Error deleting service:', err.message);
+            return res.status(500).json({ error: 'Failed to delete service.' });
+        }
+        res.json({ message: 'Service deleted successfully!' });
+    });
+});
+
+// Endpoint to get all appointments with details
+app.get('/api/appointments-all', (req, res) => {
+    const sql = `
+        SELECT 
+            a.*,
+            p.name as pet_name,
+            p.animal_type,
+            c.name as owner_name,
+            c.phone_number as owner_phone,
+            s.name as service_name,
+            s.price,
+            s.duration_minutes,
+            g.name as groomer_name
+        FROM appointments a
+        JOIN pets p ON a.pet_id = p.id
+        JOIN clients c ON p.client_id = c.id
+        JOIN services s ON a.service_id = s.id
+        LEFT JOIN groomers g ON a.groomer_id = g.id
+        ORDER BY a.appointment_start_time DESC
+    `;
+    db.all(sql, [], (err, rows) => {
+        if (err) {
+            console.error('Error querying appointments:', err.message);
+            res.status(500).json({ error: 'Database error while fetching appointments.' });
+            return;
+        }
+        res.json(rows);
+    });
+});
+
+// Endpoint to update appointment status
+app.put('/api/appointments/:id/status', (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    if (!status || !['scheduled', 'completed', 'cancelled'].includes(status)) {
+        return res.status(400).json({ error: 'Valid status is required (scheduled, completed, cancelled).' });
+    }
+    const sql = `UPDATE appointments SET status = ? WHERE id = ?`;
+    db.run(sql, [status, id], function(err) {
+        if (err) {
+            console.error('Error updating appointment status:', err.message);
+            return res.status(500).json({ error: 'Failed to update appointment status.' });
+        }
+        res.json({ message: 'Appointment status updated successfully!' });
+    });
+});
 
 // To serve static files like index.html, style.css
-app.use(express.static(path.join(__dirname, 'public'))); 
+app.use(express.static(path.join(__dirname, 'public')));
 
 // --- Server Start ---
 app.listen(PORT, () => {

@@ -73,6 +73,9 @@ function showSection(sectionName) {
         case 'groomers':
             loadGroomers();
             break;
+        case 'settings':
+            loadEmailConfig();
+            break;
     }
 }
 
@@ -251,6 +254,7 @@ async function loadAppointments() {
                     ${appt.status === 'scheduled' ? `
                         <button class="btn btn-sm btn-success" onclick="updateAppointmentStatus(${appt.id}, 'completed')">Mark Completed</button>
                         <button class="btn btn-sm btn-warning" onclick="updateAppointmentStatus(${appt.id}, 'cancelled')">Cancel</button>
+                        <button class="btn btn-sm btn-secondary" onclick="sendReminder(${appt.id})">Send Reminder</button>
                     ` : ''}
                 </div>
             </div>
@@ -1088,5 +1092,171 @@ async function deleteGroomer(groomerId) {
     } catch (error) {
         console.error('Error deleting groomer:', error);
         showAlert('Failed to delete groomer', 'error');
+    }
+}
+
+// ===== EMAIL SETTINGS =====
+
+async function loadEmailConfig() {
+    try {
+        const response = await fetch('/api/email-config');
+        const config = await response.json();
+        
+        if (config) {
+            document.getElementById('email-enabled').checked = config.enabled === 1;
+            document.getElementById('email-provider').value = config.provider || 'gmail';
+            document.getElementById('email-address').value = config.email || '';
+            document.getElementById('email-password').value = config.password || '';
+            document.getElementById('smtp-host').value = config.smtp_host || '';
+            document.getElementById('smtp-port').value = config.smtp_port || '';
+            document.getElementById('shop-name').value = config.shop_name || '';
+            document.getElementById('shop-phone').value = config.shop_phone || '';
+            
+            // Show/hide email settings based on enabled status
+            document.getElementById('email-settings').style.display = config.enabled === 1 ? 'block' : 'none';
+            
+            // Show/hide SMTP fields based on provider
+            toggleSmtpFields();
+        }
+    } catch (error) {
+        console.error('Error loading email config:', error);
+    }
+}
+
+// Toggle email settings visibility
+document.getElementById('email-enabled').addEventListener('change', function() {
+    document.getElementById('email-settings').style.display = this.checked ? 'block' : 'none';
+});
+
+// Toggle SMTP fields based on provider
+function toggleSmtpFields() {
+    const provider = document.getElementById('email-provider').value;
+    const smtpFields = document.getElementById('smtp-fields');
+    const smtpHost = document.getElementById('smtp-host');
+    const smtpPort = document.getElementById('smtp-port');
+    
+    if (provider === 'custom') {
+        smtpFields.style.display = 'block';
+    } else {
+        smtpFields.style.display = 'none';
+        
+        // Set default values for known providers
+        if (provider === 'hostinger') {
+            smtpHost.value = 'smtp.hostinger.com';
+            smtpPort.value = '465';
+        } else if (provider === 'gmail') {
+            smtpHost.value = '';
+            smtpPort.value = '';
+        }
+    }
+}
+
+async function saveEmailConfig(event) {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    
+    const data = {
+        enabled: document.getElementById('email-enabled').checked ? 1 : 0,
+        provider: formData.get('provider'),
+        email: formData.get('email'),
+        password: formData.get('password'),
+        smtp_host: formData.get('smtp_host'),
+        smtp_port: formData.get('smtp_port'),
+        shop_name: formData.get('shop_name'),
+        shop_phone: formData.get('shop_phone')
+    };
+    
+    // Validation
+    if (data.enabled && (!data.email || !data.password)) {
+        showAlert('Email address and password are required when email is enabled', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/email-config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        
+        if (!response.ok) throw new Error(result.error);
+        
+        showAlert('Email settings saved successfully');
+        
+    } catch (error) {
+        console.error('Error saving email config:', error);
+        showAlert('Failed to save email settings: ' + error.message, 'error');
+    }
+}
+
+async function testEmailConnection() {
+    // First save the current settings
+    const formData = new FormData(document.getElementById('email-config-form'));
+    
+    const data = {
+        enabled: 1, // Temporarily enable for testing
+        provider: formData.get('provider'),
+        email: formData.get('email'),
+        password: formData.get('password'),
+        smtp_host: formData.get('smtp_host'),
+        smtp_port: formData.get('smtp_port'),
+        shop_name: formData.get('shop_name'),
+        shop_phone: formData.get('shop_phone')
+    };
+    
+    if (!data.email || !data.password) {
+        showAlert('Please enter email address and password first', 'error');
+        return;
+    }
+    
+    try {
+        showAlert('Testing email connection...', 'info');
+        
+        // Save config temporarily
+        await fetch('/api/email-config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        
+        // Test connection
+        const response = await fetch('/api/email-test', {
+            method: 'POST'
+        });
+        
+        const result = await response.json();
+        
+        if (!response.ok) throw new Error(result.error);
+        
+        showAlert('✅ Email connection successful! Test email sent.', 'success');
+        
+    } catch (error) {
+        console.error('Error testing email:', error);
+        showAlert('❌ Email connection failed: ' + error.message, 'error');
+    }
+}
+
+
+async function sendReminder(appointmentId) {
+    if (!confirm('Send a reminder email for this appointment?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/appointments/${appointmentId}/send-reminder`, {
+            method: 'POST'
+        });
+        
+        const result = await response.json();
+        
+        if (!response.ok) throw new Error(result.error);
+        
+        showAlert('Reminder email sent successfully!');
+        
+    } catch (error) {
+        console.error('Error sending reminder:', error);
+        showAlert('Failed to send reminder: ' + error.message, 'error');
     }
 }

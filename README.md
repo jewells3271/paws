@@ -9,14 +9,17 @@ A complete online booking and management system for pet grooming businesses, bui
 - **Appointment Management** - View, schedule, complete, and cancel appointments
 - **Service Management** - Create, edit, and delete services with custom pricing
 - **Groomer Scheduling** - Set weekly schedules for multiple groomers
+- **Email Notifications** - Automatic booking confirmations, manual reminders, cancellation notices
 - **Dashboard** - Quick overview of today's appointments and business stats
 - **PIN System** - Automatic generation of unique 5-digit PINs for each pet
+- **Settings** - Configure email (Gmail/Hostinger), shop name, phone number
 
 ### For Clients (Booking Portal)
 - **Simple Booking Flow** - Enter PIN → Confirm Pet → Select Service → Pick Time Slot
 - **Groomer Selection** - See which groomer is available for each time slot
 - **Price Transparency** - View service prices before booking
 - **Appointment Confirmation** - Instant confirmation with all booking details
+- **Email Confirmations** - Receive professional confirmation emails (if enabled)
 
 ## Technology Stack
 
@@ -57,7 +60,19 @@ A complete online booking and management system for pet grooming businesses, bui
 
 ## Setup for Your Shop
 
-### 1. Configure Your Services
+### 1. Configure Email Notifications (Optional)
+
+1. Go to **Settings** in the admin panel
+2. Check "Enable Email Notifications"
+3. Choose your email provider (Gmail or Hostinger)
+4. Enter your email credentials
+5. Add your shop name and phone number
+6. Test the connection
+7. Save settings
+
+**See [EMAIL_SETUP.md](EMAIL_SETUP.md) for detailed instructions.**
+
+### 2. Configure Your Services
 
 1. Open the Admin Panel (http://localhost:3000/admin/)
 2. Login with PIN `4921`

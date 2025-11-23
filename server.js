@@ -2,7 +2,6 @@
 const express = require('express');
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
-const emailService = require('./email-service');
 
 const app = express();
 const PORT = 3000;
@@ -61,7 +60,10 @@ app.get('/api/clients', (req, res) => {
 
 // Endpoint to search clients and pets
 app.get('/api/search', (req, res) => {
-    const query = req.query.q || '';
+    const query = req.query.q;
+    if (!query) {
+        return res.status(400).json({ error: 'Search query parameter "q" is required.' });
+    }
 
     const searchTerm = `%${query}%`;
     const sql = `
@@ -231,7 +233,7 @@ app.get('/api/availability', async (req, res) => {
 
 // Endpoint to book an appointment
 app.post('/api/appointments', async (req, res) => {
-    const { petId, serviceId, appointmentStartTime, groomerId } = req.body;
+    const { petId, serviceId, appointmentStartTime } = req.body;
 
     if (!petId || !serviceId || !appointmentStartTime) {
         return res.status(400).json({ error: 'petId, serviceId, and appointmentStartTime are required.' });
@@ -254,64 +256,13 @@ app.post('/api/appointments', async (req, res) => {
         const appointmentEndTime = endTime.toISOString();
 
         // 3. Insert the appointment
-        const insertSql = `INSERT INTO appointments (pet_id, service_id, appointment_start_time, appointment_end_time, status, groomer_id) VALUES (?, ?, ?, ?, 'scheduled', ?)`;
-        db.run(insertSql, [petId, serviceId, appointmentStartTime, appointmentEndTime, groomerId || null], async function(err) {
+        const insertSql = `INSERT INTO appointments (pet_id, service_id, appointment_start_time, appointment_end_time, status) VALUES (?, ?, ?, ?, 'scheduled')`;
+        db.run(insertSql, [petId, serviceId, appointmentStartTime, appointmentEndTime], function(err) {
             if (err) {
                 console.error('Error creating appointment:', err.message);
                 return res.status(500).json({ error: 'Failed to book appointment.' });
             }
-            
-            const appointmentId = this.lastID;
-            
-            // Send confirmation email
-            try {
-                await emailService.loadConfig();
-                
-                // Get full appointment details for email
-                const detailsSql = `
-                    SELECT 
-                        a.*,
-                        p.name as pet_name,
-                        c.name as client_name,
-                        c.email as client_email,
-                        s.name as service_name,
-                        s.price,
-                        g.name as groomer_name
-                    FROM appointments a
-                    JOIN pets p ON a.pet_id = p.id
-                    JOIN clients c ON p.client_id = c.id
-                    JOIN services s ON a.service_id = s.id
-                    LEFT JOIN groomers g ON a.groomer_id = g.id
-                    WHERE a.id = ?
-                `;
-                
-                db.get(detailsSql, [appointmentId], async (err, appt) => {
-                    if (err || !appt) {
-                        console.error('Error fetching appointment details for email:', err);
-                        return;
-                    }
-                    
-                    const emailData = {
-                        clientName: appt.client_name,
-                        clientEmail: appt.client_email,
-                        petName: appt.pet_name,
-                        serviceName: appt.service_name,
-                        appointmentDate: new Date(appt.appointment_start_time).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
-                        appointmentTime: new Date(appt.appointment_start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-                        groomerName: appt.groomer_name || 'To be assigned',
-                        price: appt.price,
-                        shopName: emailService.config?.shop_name,
-                        shopPhone: emailService.config?.shop_phone
-                    };
-                    
-                    await emailService.sendBookingConfirmation(emailData);
-                });
-            } catch (error) {
-                console.error('Error sending confirmation email:', error);
-                // Don't fail the booking if email fails
-            }
-            
-            res.status(201).json({ message: 'Appointment booked successfully!', appointmentId: appointmentId });
+            res.status(201).json({ message: 'Appointment booked successfully!', appointmentId: this.lastID });
         });
     });
 });
@@ -497,328 +448,10 @@ app.post('/api/client-pet', async (req, res) => {
     });
 });
 
-// Endpoint to get all groomer schedules
-app.get('/api/groomer-schedules', (req, res) => {
-    const sql = `
-        SELECT gs.*, g.name as groomer_name 
-        FROM groomer_schedules gs
-        JOIN groomers g ON gs.groomer_id = g.id
-        ORDER BY gs.groomer_id, gs.day_of_week
-    `;
-    db.all(sql, [], (err, rows) => {
-        if (err) {
-            console.error('Error querying groomer schedules:', err.message);
-            res.status(500).json({ error: 'Database error while fetching schedules.' });
-            return;
-        }
-        res.json(rows);
-    });
-});
 
-// Endpoint to delete a groomer
-app.delete('/api/groomers/:id', (req, res) => {
-    const { id } = req.params;
-    const sql = `DELETE FROM groomers WHERE id = ?`;
-    db.run(sql, [id], function(err) {
-        if (err) {
-            console.error('Error deleting groomer:', err.message);
-            return res.status(500).json({ error: 'Failed to delete groomer.' });
-        }
-        res.json({ message: 'Groomer deleted successfully!' });
-    });
-});
-
-// Endpoint to create a new service
-app.post('/api/services', (req, res) => {
-    const { name, description, price, duration_minutes, animal_type } = req.body;
-    if (!name || !price || !duration_minutes || !animal_type) {
-        return res.status(400).json({ error: 'Name, price, duration, and animal type are required.' });
-    }
-    const sql = `INSERT INTO services (name, description, price, duration_minutes, animal_type) VALUES (?, ?, ?, ?, ?)`;
-    db.run(sql, [name, description, price, duration_minutes, animal_type], function(err) {
-        if (err) {
-            console.error('Error creating service:', err.message);
-            return res.status(500).json({ error: 'Failed to create service.' });
-        }
-        res.status(201).json({ message: 'Service created successfully!', id: this.lastID });
-    });
-});
-
-// Endpoint to update a service
-app.put('/api/services/:id', (req, res) => {
-    const { id } = req.params;
-    const { name, description, price, duration_minutes, animal_type } = req.body;
-    if (!name || !price || !duration_minutes || !animal_type) {
-        return res.status(400).json({ error: 'Name, price, duration, and animal type are required.' });
-    }
-    const sql = `UPDATE services SET name = ?, description = ?, price = ?, duration_minutes = ?, animal_type = ? WHERE id = ?`;
-    db.run(sql, [name, description, price, duration_minutes, animal_type, id], function(err) {
-        if (err) {
-            console.error('Error updating service:', err.message);
-            return res.status(500).json({ error: 'Failed to update service.' });
-        }
-        res.json({ message: 'Service updated successfully!' });
-    });
-});
-
-// Endpoint to delete a service
-app.delete('/api/services/:id', (req, res) => {
-    const { id } = req.params;
-    const sql = `DELETE FROM services WHERE id = ?`;
-    db.run(sql, [id], function(err) {
-        if (err) {
-            console.error('Error deleting service:', err.message);
-            return res.status(500).json({ error: 'Failed to delete service.' });
-        }
-        res.json({ message: 'Service deleted successfully!' });
-    });
-});
-
-// Endpoint to get all appointments with details
-app.get('/api/appointments-all', (req, res) => {
-    const sql = `
-        SELECT 
-            a.*,
-            p.name as pet_name,
-            p.animal_type,
-            c.name as owner_name,
-            c.phone_number as owner_phone,
-            s.name as service_name,
-            s.price,
-            s.duration_minutes,
-            g.name as groomer_name
-        FROM appointments a
-        JOIN pets p ON a.pet_id = p.id
-        JOIN clients c ON p.client_id = c.id
-        JOIN services s ON a.service_id = s.id
-        LEFT JOIN groomers g ON a.groomer_id = g.id
-        ORDER BY a.appointment_start_time DESC
-    `;
-    db.all(sql, [], (err, rows) => {
-        if (err) {
-            console.error('Error querying appointments:', err.message);
-            res.status(500).json({ error: 'Database error while fetching appointments.' });
-            return;
-        }
-        res.json(rows);
-    });
-});
-
-// Endpoint to update appointment status
-app.put('/api/appointments/:id/status', (req, res) => {
-    const { id } = req.params;
-    const { status } = req.body;
-    if (!status || !['scheduled', 'completed', 'cancelled'].includes(status)) {
-        return res.status(400).json({ error: 'Valid status is required (scheduled, completed, cancelled).' });
-    }
-    const sql = `UPDATE appointments SET status = ? WHERE id = ?`;
-    db.run(sql, [status, id], async function(err) {
-        if (err) {
-            console.error('Error updating appointment status:', err.message);
-            return res.status(500).json({ error: 'Failed to update appointment status.' });
-        }
-        
-        // Send cancellation email if status changed to cancelled
-        if (status === 'cancelled') {
-            try {
-                await emailService.loadConfig();
-                
-                const detailsSql = `
-                    SELECT 
-                        a.*,
-                        p.name as pet_name,
-                        c.name as client_name,
-                        c.email as client_email,
-                        s.name as service_name
-                    FROM appointments a
-                    JOIN pets p ON a.pet_id = p.id
-                    JOIN clients c ON p.client_id = c.id
-                    JOIN services s ON a.service_id = s.id
-                    WHERE a.id = ?
-                `;
-                
-                db.get(detailsSql, [id], async (err, appt) => {
-                    if (err || !appt) {
-                        console.error('Error fetching appointment details for cancellation email:', err);
-                        return;
-                    }
-                    
-                    const emailData = {
-                        clientName: appt.client_name,
-                        clientEmail: appt.client_email,
-                        petName: appt.pet_name,
-                        serviceName: appt.service_name,
-                        appointmentDate: new Date(appt.appointment_start_time).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
-                        appointmentTime: new Date(appt.appointment_start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-                        shopName: emailService.config?.shop_name,
-                        shopPhone: emailService.config?.shop_phone
-                    };
-                    
-                    await emailService.sendCancellationNotification(emailData);
-                });
-            } catch (error) {
-                console.error('Error sending cancellation email:', error);
-            }
-        }
-        
-        res.json({ message: 'Appointment status updated successfully!' });
-    });
-});
-
-// Email configuration endpoints
-app.get('/api/email-config', (req, res) => {
-    const sql = 'SELECT * FROM email_config WHERE id = 1';
-    db.get(sql, [], (err, row) => {
-        if (err) {
-            console.error('Error fetching email config:', err.message);
-            return res.status(500).json({ error: 'Failed to fetch email config' });
-        }
-        // Don't send password to client, just indicate if it's set
-        if (row && row.password) {
-            row.password = '********';
-        }
-        res.json(row || {});
-    });
-});
-
-app.post('/api/email-config', (req, res) => {
-    const { enabled, provider, email, password, smtp_host, smtp_port, shop_name, shop_phone } = req.body;
-    
-    // Check if config exists
-    db.get('SELECT * FROM email_config WHERE id = 1', [], (err, existing) => {
-        if (err) {
-            console.error('Error checking email config:', err.message);
-            return res.status(500).json({ error: 'Failed to save email config' });
-        }
-        
-        // Only update password if a new one is provided (not the masked value)
-        const updatePassword = password && password !== '********';
-        
-        let sql, params;
-        if (existing) {
-            if (updatePassword) {
-                sql = `UPDATE email_config SET enabled = ?, provider = ?, email = ?, password = ?, smtp_host = ?, smtp_port = ?, shop_name = ?, shop_phone = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`;
-                params = [enabled, provider, email, password, smtp_host, smtp_port, shop_name, shop_phone];
-            } else {
-                sql = `UPDATE email_config SET enabled = ?, provider = ?, email = ?, smtp_host = ?, smtp_port = ?, shop_name = ?, shop_phone = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`;
-                params = [enabled, provider, email, smtp_host, smtp_port, shop_name, shop_phone];
-            }
-        } else {
-            sql = `INSERT INTO email_config (id, enabled, provider, email, password, smtp_host, smtp_port, shop_name, shop_phone) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`;
-            params = [enabled, provider, email, password, smtp_host, smtp_port, shop_name, shop_phone];
-        }
-        
-        db.run(sql, params, async function(err) {
-            if (err) {
-                console.error('Error saving email config:', err.message);
-                return res.status(500).json({ error: 'Failed to save email config' });
-            }
-            
-            // Reload email service config
-            try {
-                await emailService.loadConfig();
-                res.json({ message: 'Email configuration saved successfully' });
-            } catch (error) {
-                console.error('Error reloading email service:', error);
-                res.json({ message: 'Email configuration saved, but failed to reload service' });
-            }
-        });
-    });
-});
-
-app.post('/api/email-test', async (req, res) => {
-    try {
-        await emailService.loadConfig();
-        await emailService.testConnection();
-        
-        // Send a test email
-        const testData = {
-            clientName: 'Test User',
-            clientEmail: emailService.config.email, // Send to self
-            petName: 'Test Pet',
-            serviceName: 'Test Service',
-            appointmentDate: new Date().toLocaleDateString(),
-            appointmentTime: new Date().toLocaleTimeString(),
-            groomerName: 'Test Groomer',
-            price: 50.00,
-            shopName: emailService.config.shop_name || 'Paws Grooming',
-            shopPhone: emailService.config.shop_phone || '(555) 123-4567'
-        };
-        
-        const result = await emailService.sendBookingConfirmation(testData);
-        
-        if (result.success) {
-            res.json({ message: 'Email test successful! Check your inbox.' });
-        } else {
-            throw new Error(result.error || 'Failed to send test email');
-        }
-    } catch (error) {
-        console.error('Email test failed:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Endpoint to send appointment reminder manually
-app.post('/api/appointments/:id/send-reminder', async (req, res) => {
-    const { id } = req.params;
-    
-    try {
-        await emailService.loadConfig();
-        
-        const detailsSql = `
-            SELECT 
-                a.*,
-                p.name as pet_name,
-                c.name as client_name,
-                c.email as client_email,
-                s.name as service_name,
-                g.name as groomer_name
-            FROM appointments a
-            JOIN pets p ON a.pet_id = p.id
-            JOIN clients c ON p.client_id = c.id
-            JOIN services s ON a.service_id = s.id
-            LEFT JOIN groomers g ON a.groomer_id = g.id
-            WHERE a.id = ?
-        `;
-        
-        db.get(detailsSql, [id], async (err, appt) => {
-            if (err || !appt) {
-                console.error('Error fetching appointment details for reminder:', err);
-                return res.status(404).json({ error: 'Appointment not found' });
-            }
-            
-            if (!appt.client_email) {
-                return res.status(400).json({ error: 'Client has no email address' });
-            }
-            
-            const emailData = {
-                clientName: appt.client_name,
-                clientEmail: appt.client_email,
-                petName: appt.pet_name,
-                serviceName: appt.service_name,
-                appointmentDate: new Date(appt.appointment_start_time).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
-                appointmentTime: new Date(appt.appointment_start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-                groomerName: appt.groomer_name || 'To be assigned',
-                shopName: emailService.config?.shop_name,
-                shopPhone: emailService.config?.shop_phone
-            };
-            
-            const result = await emailService.sendAppointmentReminder(emailData);
-            
-            if (result.success) {
-                res.json({ message: 'Reminder email sent successfully!' });
-            } else {
-                res.status(500).json({ error: result.error || 'Failed to send reminder' });
-            }
-        });
-    } catch (error) {
-        console.error('Error sending reminder:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
 
 // To serve static files like index.html, style.css
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'))); 
 
 // --- Server Start ---
 app.listen(PORT, () => {
